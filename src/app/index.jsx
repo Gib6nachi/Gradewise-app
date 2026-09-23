@@ -1,6 +1,10 @@
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
   Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -11,62 +15,85 @@ import {
 export default function Index() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [secureText, setSecureText] = useState(true); // True means hidden by default
+  const router = useRouter();
 
   return (
-    <View style={styles.container}>
-      {/* 1. Top Logo Area */}
-      <View style={styles.logoContainer}>
-        <Image
-          source={require("../../assets/images/Gradewise logos/logomini.png")}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-      </View>
+    <KeyboardAvoidingView
+      style={styles.keyboardContainer}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* 1. Top Logo Area */}
+        <View style={styles.logoContainer}>
+          <Image
+            source={require("../../assets/images/Gradewise logos/logomini.png")}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        </View>
 
-      {/* 2. White Inner Sign-In Card */}
-      <View style={styles.card}>
-        <Text style={styles.title}>Sign in</Text>
-        <Text style={styles.subtitle}>sign in to your account</Text>
+        {/* 2. White Inner Sign-In Card */}
+        <View style={styles.card}>
+          <Text style={styles.title}>Sign in</Text>
+          <Text style={styles.subtitle}>sign in to your account</Text>
 
-        {/* Email Input Field */}
-        <Text style={styles.label}>Email address</Text>
-        <TextInput
-          style={styles.input}
-          value={email}
-          onChangeText={setEmail}
-          placeholder="example@email.com"
-          autoCapitalize="none"
-        />
+          {/* Email Input Field */}
+          <Text style={styles.label}>Email address</Text>
+          <TextInput
+            style={styles.input}
+            value={email}
+            onChangeText={setEmail}
+            placeholder="example@email.com"
+            autoCapitalize="none"
+          />
 
-        {/* Password Input Field */}
-        <Text style={styles.label}>Password</Text>
-        <TextInput
-          style={styles.input}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry={true}
-          autoCapitalize="none"
-        />
+          {/* Password Input Field */}
+          <Text style={styles.label}>Password</Text>
+          <TextInput
+            style={styles.input}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={secureText}
+            autoCapitalize="none"
+          />
 
-        {/* Forgot Password Row */}
-        <TouchableOpacity style={styles.forgotContainer}>
-          <Text style={styles.forgotText}>Forgot password?</Text>
-        </TouchableOpacity>
+          {/* Action Row: Show Password & Forgot Password */}
+          <View style={styles.actionRow}>
+            {/* Show/Hide Toggle */}
+            <TouchableOpacity
+              style={styles.showPasswordContainer}
+              onPress={() => setSecureText(!secureText)}
+            >
+              <Text style={styles.showPasswordText}>
+                {secureText ? "Show password" : "Hide password"}
+              </Text>
+            </TouchableOpacity>
 
-        {/* Custom Maroon/Crimson Sign In Button */}
-        <TouchableOpacity style={styles.button}>
-          <Text style={styles.buttonText}>Sign in</Text>
-        </TouchableOpacity>
-      </View>
+            {/* Forgot Password */}
+            <TouchableOpacity style={styles.forgotContainer}>
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </TouchableOpacity>
+          </View>
 
-      {/* 3. Bottom Sign Up Navigation Link */}
-      <View style={styles.footerContainer}>
-        <Text style={styles.footerText}>Don't have an account? </Text>
-        <TouchableOpacity>
-          <Text style={styles.signUpLinkText}>Sign up</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+          {/* Custom Maroon/Crimson Sign In Button */}
+          <TouchableOpacity style={styles.button}>
+            <Text style={styles.buttonText}>Sign in</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 3. Bottom Sign Up Navigation Link */}
+        <View style={styles.footerContainer}>
+          <Text style={styles.footerText}>Don't have an account? </Text>
+          <TouchableOpacity onPress={() => router.push("/signup")}>
+            <Text style={styles.signUpLinkText}>Sign up</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -78,6 +105,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 20,
   },
+
+  keyboardContainer: {
+    flex: 1,
+    backgroundColor: "#EFEBE9", // Maintains your clean beige backdrop color
+  },
+  scrollContent: {
+    flexGrow: 1,
+    alignItems: "center",
+    justifyContent: "center", // Keeps the card elevated and perfectly centered like Figma
+    padding: 20,
+  },
+
   logoContainer: {
     marginBottom: 20,
     alignItems: "center",
@@ -141,15 +180,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
   },
-  forgotContainer: {
-    alignSelf: "flex-end",
+
+  // === PASTED NEW ACTION ROW STYLES START HERE ===
+  actionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between", // Pushes Show Password left, Forgot Password right
+    alignItems: "center",
     marginTop: 8,
+    width: "100%",
   },
-  forgotText: {
-    color: "#6D2829", // Matching crimson tone for links
+  showPasswordContainer: {
+    paddingVertical: 2,
+  },
+  showPasswordText: {
+    color: "#757575", // Balanced grey style color
     fontSize: 13,
     fontWeight: "500",
   },
+  forgotContainer: {
+    paddingVertical: 2,
+  },
+  forgotText: {
+    color: "#6D2829", // Corporate crimson brand color
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  // === PASTED NEW ACTION ROW STYLES END HERE ===
+
   footerContainer: {
     flexDirection: "row",
     marginTop: 24,
