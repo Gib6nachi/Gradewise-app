@@ -82,7 +82,10 @@ export default function SignIn() {
           </View>
 
           {/* Custom Maroon/Crimson Sign In Button */}
-          <TouchableOpacity style={styles.button}>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => router.push("/enrollment")} // Routes directly to Enrollment Code view
+          >
             <Text style={styles.buttonText}>Sign in</Text>
           </TouchableOpacity>
         </View>
