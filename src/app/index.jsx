@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -12,11 +13,12 @@ import {
   View,
 } from "react-native";
 
-export default function Index() {
+export default function SignIn() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [secureText, setSecureText] = useState(true); // True means hidden by default
+  const [secureText, setSecureText] = useState(true);
   const router = useRouter();
+  const [roleModalVisible, setRoleModalVisible] = useState(false);
 
   return (
     <KeyboardAvoidingView
@@ -88,10 +90,67 @@ export default function Index() {
         {/* 3. Bottom Sign Up Navigation Link */}
         <View style={styles.footerContainer}>
           <Text style={styles.footerText}>Don't have an account? </Text>
-          <TouchableOpacity onPress={() => router.push("/signup")}>
+          <TouchableOpacity onPress={() => setRoleModalVisible(true)}>
             <Text style={styles.signUpLinkText}>Sign up</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Universal Role Selection Pop-up Modal */}
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={roleModalVisible}
+          onRequestClose={() => setRoleModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Create Account</Text>
+              <Text style={styles.modalSubtitle}>
+                Please choose your profile path to proceed
+              </Text>
+
+              {/* Path 1: Student Routing */}
+              <TouchableOpacity
+                style={styles.modalOptionButton}
+                onPress={() => {
+                  setRoleModalVisible(false);
+                  router.push({
+                    pathname: "/signup",
+                    params: { role: "student" },
+                  });
+                }}
+              >
+                <Text style={styles.modalOptionButtonText}>
+                  Join as Student
+                </Text>
+              </TouchableOpacity>
+
+              {/* Path 2: Teacher Routing */}
+              <TouchableOpacity
+                style={[styles.modalOptionButton, styles.teacherButtonBorder]}
+                onPress={() => {
+                  setRoleModalVisible(false);
+                  router.push({
+                    pathname: "/signup",
+                    params: { role: "teacher" },
+                  });
+                }}
+              >
+                <Text style={styles.teacherButtonText}>
+                  Register as Teacher
+                </Text>
+              </TouchableOpacity>
+
+              {/* Cancel out of selection layout */}
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => setRoleModalVisible(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -100,27 +159,25 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#EFEBE9", // Soft beige background color
+    backgroundColor: "#EFEBE9",
     alignItems: "center",
     justifyContent: "center",
     padding: 20,
   },
-
   keyboardContainer: {
     flex: 1,
-    backgroundColor: "#EFEBE9", // Maintains your clean beige backdrop color
+    backgroundColor: "#EFEBE9",
   },
   scrollContent: {
     flexGrow: 1,
     alignItems: "center",
-    justifyContent: "center", // Keeps the card elevated and perfectly centered like Figma
+    justifyContent: "center",
     padding: 20,
   },
-
   logoContainer: {
     marginBottom: 20,
     alignItems: "center",
-    justifyContent: "center", // Clean alignment fix you added
+    justifyContent: "center",
   },
   logo: {
     width: 120,
@@ -167,7 +224,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   button: {
-    backgroundColor: "#6D2829", // The crimson/maroon color
+    backgroundColor: "#6D2829",
     width: "100%",
     height: 48,
     borderRadius: 6,
@@ -180,11 +237,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
   },
-
-  // === PASTED NEW ACTION ROW STYLES START HERE ===
   actionRow: {
     flexDirection: "row",
-    justifyContent: "space-between", // Pushes Show Password left, Forgot Password right
+    justifyContent: "space-between",
     alignItems: "center",
     marginTop: 8,
     width: "100%",
@@ -193,7 +248,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   showPasswordText: {
-    color: "#757575", // Balanced grey style color
+    color: "#757575",
     fontSize: 13,
     fontWeight: "500",
   },
@@ -201,12 +256,10 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   forgotText: {
-    color: "#6D2829", // Corporate crimson brand color
+    color: "#6D2829",
     fontSize: 13,
     fontWeight: "500",
   },
-  // === PASTED NEW ACTION ROW STYLES END HERE ===
-
   footerContainer: {
     flexDirection: "row",
     marginTop: 24,
@@ -220,5 +273,69 @@ const styles = StyleSheet.create({
     color: "#6D2829",
     fontSize: 14,
     fontWeight: "bold",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalCard: {
+    width: "90%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "#000000",
+    marginBottom: 6,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: "#757575",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  modalOptionButton: {
+    backgroundColor: "#6D2829",
+    width: "100%",
+    height: 46,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: 6,
+  },
+  modalOptionButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "bold",
+  },
+  teacherButtonBorder: {
+    backgroundColor: "transparent",
+    borderWidth: 1.5,
+    borderColor: "#6D2829",
+  },
+  teacherButtonText: {
+    color: "#6D2829",
+    fontSize: 15,
+    fontWeight: "bold",
+  },
+  modalCancelButton: {
+    marginTop: 14,
+    paddingVertical: 4,
+  },
+  modalCancelText: {
+    color: "#757575",
+    fontSize: 14,
+    fontWeight: "500",
   },
 });
