@@ -1,6 +1,7 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
+  Alert,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -12,13 +13,80 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+// Import our central, secure Appwrite cloud connection tools
+import { Query } from "react-native-appwrite";
+import { account, databases } from "../../lib/appwrite";
 
 export default function SignIn() {
+  const router = useRouter();
+
+  // State control hooks tracking text field inputs and loaders
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [secureText, setSecureText] = useState(true);
-  const router = useRouter();
   const [roleModalVisible, setRoleModalVisible] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // === PASTE PART 2 IMMEDIATELY DOWN BENEATH THIS LINE ===
+  // Core background operation validating credentials against the Appwrite server
+  const handleSignIn = async () => {
+    // 1. Safeguard: Block submission if user leaves text boxes blank
+    if (!email || !password) {
+      Alert.alert(
+        "Input Error",
+        "Please type in your email address and password.",
+      );
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // 2. Check the Auth Vault: Attempt to spin up a secure cloud user session
+      const session = await account.createEmailPasswordSession(email, password);
+
+      if (!session) throw new Error("Authentication handshake failed.");
+
+      // 3. Look up Profile Role: Scan our users_collection table row columns to verify user role
+      const userProfileResponse = await databases.listDocuments(
+        "gradtrack_db",
+        "users_collection",
+        [Query.equal("email", email.toLowerCase().trim())],
+      );
+
+      // Default fallback state if data row isn't found
+      let userRole = "student";
+
+      if (userProfileResponse.documents.length > 0) {
+        // Appwrite returning database structures store attributes straight on the document instance
+        userRole = userProfileResponse.documents[0].role;
+      }
+
+      // 4. Dynamic Path Traversal: Route user strictly based on their database permission status
+      Alert.alert("Welcome Back!", "Login verified successfully.", [
+        {
+          text: "Proceed",
+          onPress: () => {
+            if (userRole === "teacher") {
+              router.replace("/dashboard"); // Teachers pass straight into their custom view panels hub
+            } else {
+              router.replace("/enrollment"); // Students land squarely on the Token/Code gateway screen
+            }
+          },
+        },
+      ]);
+    } catch (error) {
+      console.log("❌ LOGIN AUTH ERROR:", error);
+      Alert.alert(
+        "Sign In Failed",
+        error.message || "Invalid username or password credentials provided.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // === PASTE PART 3 IMMEDIATELY DOWN BENEATH THIS LINE ===
 
   return (
     <KeyboardAvoidingView
@@ -51,6 +119,7 @@ export default function SignIn() {
             onChangeText={setEmail}
             placeholder="example@email.com"
             autoCapitalize="none"
+            keyboardType="email-address"
           />
 
           {/* Password Input Field */}
@@ -65,7 +134,6 @@ export default function SignIn() {
 
           {/* Action Row: Show Password & Forgot Password */}
           <View style={styles.actionRow}>
-            {/* Show/Hide Toggle */}
             <TouchableOpacity
               style={styles.showPasswordContainer}
               onPress={() => setSecureText(!secureText)}
@@ -75,18 +143,20 @@ export default function SignIn() {
               </Text>
             </TouchableOpacity>
 
-            {/* Forgot Password */}
             <TouchableOpacity style={styles.forgotContainer}>
               <Text style={styles.forgotText}>Forgot password?</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Custom Maroon/Crimson Sign In Button */}
+          {/* Custom Maroon/Crimson Sign In Button linked directly to authentication checking logic */}
           <TouchableOpacity
             style={styles.button}
-            onPress={() => router.push("/enrollment")} // Routes directly to Enrollment Code view
+            onPress={handleSignIn}
+            disabled={loading}
           >
-            <Text style={styles.buttonText}>Sign in</Text>
+            <Text style={styles.buttonText}>
+              {loading ? "Verifying Profile..." : "Sign in"}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -158,6 +228,8 @@ export default function SignIn() {
     </KeyboardAvoidingView>
   );
 }
+
+// === PASTE PART 4 IMMEDIATELY DOWN BENEATH THIS LINE ===
 
 const styles = StyleSheet.create({
   container: {
