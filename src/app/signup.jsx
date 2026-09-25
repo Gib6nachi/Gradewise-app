@@ -1,6 +1,7 @@
-import { useLocalSearchParams, useRouter } from "expo-router"; // Imports the router to jump back to Sign In
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
+  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -11,17 +12,70 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+// Import our centralized Appwrite engine nodes cleanly
+import { account, databases, ID } from "../../lib/appwrite";
 
 export default function SignUp() {
   const router = useRouter();
-  const { role } = useLocalSearchParams();
+  const { role } = useLocalSearchParams(); // Dynamic role parsed from your login modal selection panel
 
-  // State variables for form fields
+  // State variables mapping your form input fields
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
   const [secureText, setSecureText] = useState(true);
+
+  // Core background function processing user account creation pipelines
+  const handleSignUp = async () => {
+    // 1. Basic form input verification safeguards
+    if (!name || !email || !password || !confirmPassword) {
+      Alert.alert("Error", "Please fill in all input boxes.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      Alert.alert("Error", "Passwords do not match.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // 2. Register the user authentication profile account container
+      const newAccount = await account.create(
+        ID.unique(), // Generates a unique user text string ID automatically
+        email,
+        password,
+        name,
+      );
+
+      if (!newAccount) throw new Error("Account creation node mapping failed.");
+
+      // 3. Document mapping: Inject user profile variables into your users_collection database rows
+      await databases.createDocument(
+        "gradtrack_db", // Your Database ID string
+        "users_collection", // Your Table / Collection ID string
+        ID.unique(), // Unique text string ID for this specific document entry row
+        {
+          name: name,
+          email: email,
+          role: role || "student", // Automatically locks in their chosen role path parameters
+        },
+      );
+
+      Alert.alert("Success", "Account registered successfully!", [
+        { text: "OK", onPress: () => router.push("/") }, // Sends them cleanly back to login upon completion
+      ]);
+    } catch (error) {
+      Alert.alert(
+        "Registration Failed",
+        error.message || "An unexpected network error occurred.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -103,9 +157,15 @@ export default function SignUp() {
             </TouchableOpacity>
           </View>
 
-          {/* Crimson Register Button */}
-          <TouchableOpacity style={styles.button}>
-            <Text style={styles.buttonText}>Sign up</Text>
+          {/* Crimson Register Button linked to our live cloud pipeline */}
+          <TouchableOpacity
+            style={styles.button}
+            onPress={handleSignUp}
+            disabled={loading}
+          >
+            <Text style={styles.buttonText}>
+              {loading ? "Creating Profile..." : "Sign up"}
+            </Text>
           </TouchableOpacity>
         </View>
 
