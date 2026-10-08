@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Alert,
   Image,
@@ -26,6 +26,7 @@ export default function SignIn() {
   const [secureText, setSecureText] = useState(true);
   const [roleModalVisible, setRoleModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
+  const signInInProgress = useRef(false);
 
   // === PASTE PART 2 IMMEDIATELY DOWN BENEATH THIS LINE ===
   // Core background operation validating credentials against the Appwrite server
@@ -39,12 +40,19 @@ export default function SignIn() {
       return;
     }
 
+    if (signInInProgress.current) return;
+    signInInProgress.current = true;
     setLoading(true);
 
     try {
       // 2. Check the Auth Vault: Attempt to spin up a secure cloud user session
-      const session = await account.createEmailPasswordSession(email, password);
+      try {
+        await account.deleteSession("current");
+      } catch (sessionError) {
+        if (sessionError?.code !== 401) throw sessionError;
+      }
 
+      const session = await account.createEmailPasswordSession(email, password);
       if (!session) throw new Error("Authentication handshake failed.");
 
       // 3. Look up Profile Role: Scan our users_collection table row columns to verify user role
@@ -82,6 +90,7 @@ export default function SignIn() {
         error.message || "Invalid username or password credentials provided.",
       );
     } finally {
+      signInInProgress.current = false;
       setLoading(false);
     }
   };
