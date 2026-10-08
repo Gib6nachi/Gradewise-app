@@ -1,25 +1,120 @@
+import { BlurView } from "expo-blur";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-    Dimensions,
-    Image,
-    Platform,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Animated,
+  Dimensions,
+  Image,
+  Platform,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View,
 } from "react-native";
+import { Query } from "react-native-appwrite";
+import { account, databases } from "../../lib/appwrite";
 
 const { width, height } = Dimensions.get("window");
 
 export default function Dashboard() {
   const router = useRouter();
 
-  // Dynamic layout state systems
+  // Layout presentation controls
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [shouldRenderSidebar, setShouldRenderSidebar] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
+  // Animation value reference driving the sliding translation behavior
+  const slideAnim = useRef(new Animated.Value(width)).current;
+
+  // Appwrite platform authentication records
+  const [userProfile, setUserProfile] = useState(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  // Synchronize layout sessions on container mount lines
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const currentAccount = await account.get();
+        const response = await databases.listDocuments(
+          "gradtrack_db",
+          "users_collection",
+          [Query.equal("email", currentAccount.email)],
+        );
+
+        if (response.documents.length > 0) {
+          setUserProfile(response.documents[0]); // Targets the exact active record object directly
+        } else {
+          setUserProfile({ name: currentAccount.name, role: "student" });
+        }
+      } catch (error) {
+        console.log("❌ Error fetching user dashboard profile:", error);
+        Alert.alert("Session Error", "Could not load user profile details.");
+        router.replace("/");
+      } finally {
+        setLoadingProfile(false);
+      }
+    };
+
+    fetchUserData();
+  }, []);
+
+  // Fire sliding fluid transitions smoothly every single turn
+  const openSidebarAnimated = () => {
+    setShouldRenderSidebar(true);
+    setSidebarOpen(true);
+    Animated.timing(slideAnim, {
+      toValue: 0, // Slides cleanly onto the screen layer
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeSidebarAnimated = () => {
+    setSidebarOpen(false);
+    Animated.timing(slideAnim, {
+      toValue: width, // Slides back out of the viewport bounds
+      duration: 250,
+      useNativeDriver: true,
+    }).start(() => {
+      setShouldRenderSidebar(false); // Cleanly unmounts only AFTER animation completes tracking
+    });
+  };
+
+  // Securely clear sessions and bounce user back to sign in
+  const handleLogout = async () => {
+    try {
+      await account.deleteSession("current");
+      setSidebarOpen(false);
+      setShouldRenderSidebar(false);
+      router.replace("/");
+    } catch (error) {
+      console.log("❌ LOGOUT ERROR:", error);
+      Alert.alert(
+        "Logout Failed",
+        "An unexpected error occurred while clearing your session.",
+      );
+    }
+  };
+
+  // Central Hub Button interaction behavior selector
+  const handleCenterButtonPress = () => {
+    if (!userProfile) return;
+
+    if (userProfile.role === "teacher") {
+      Alert.alert(
+        "Teacher Portal",
+        `Hello ${userProfile.name}! Next, we'll code your sliding management sheet here to handle portal approvals.`,
+      );
+    } else {
+      Alert.alert(
+        "Student Status",
+        "Students only have access to view coursework updates and grades.",
+      );
+    }
+  };
   return (
     <SafeAreaView style={styles.safeContainer}>
       {/* BACKGROUND AREA: The custom diagonal visual slice background layer */}
@@ -33,7 +128,7 @@ export default function Dashboard() {
         <View style={styles.topControlRow}>
           <TouchableOpacity
             style={styles.hamburgerTouchArea}
-            onPress={() => setSidebarOpen(true)}
+            onPress={openSidebarAnimated}
           >
             <View style={styles.hamburgerLine} />
             <View style={[styles.hamburgerLine, { marginVertical: 5 }]} />
@@ -48,65 +143,92 @@ export default function Dashboard() {
             style={styles.centerMainLogoAsset}
             resizeMode="contain"
           />
+          {/* Bold Brand Title Matching Figma Specification Typography */}
+          <Text style={styles.brandTitleBoldText}>GRADTRACK</Text>
+
+          {userProfile && (
+            <Text style={styles.userGreetingText}>
+              Welcome, {userProfile.name} ({userProfile.role})
+            </Text>
+          )}
         </View>
       </View>
 
-      {/* OVERLAY 1: Blur Simulation Layer for Active Notification State Screen View */}
+      {/* OVERLAY 1: Stable Cross-Platform Frosted Blur Shield */}
       {notificationsOpen && (
-        <View style={styles.notificationOverlayContainer}>
-          <View style={styles.blurCoverFilterBackdrop} />
-          <Text style={styles.notificationHeadingTitle}>Notifications</Text>
-          <Text style={styles.noNotificationsSubtitleText}>
-            No new updates right now.
-          </Text>
-        </View>
-      )}
-
-      {/* OVERLAY 2: Sliding Sidebar Navigation Drawer Layout Panel */}
-      {sidebarOpen && (
-        <View style={styles.sidebarDrawerContainer}>
-          {/* Top Header inside the sidebar */}
-          <View style={styles.sidebarHeaderBlock}>
-            <Image
-              source={require("../../assets/images/Gradewise logos/logomain.png")}
-              style={styles.sidebarBrandLogoAsset}
-              resizeMode="contain"
-            />
-          </View>
-
-          {/* Sidebar Navigation Shortcut Item Links */}
-          <View style={styles.sidebarLinksListWrapper}>
-            {["Course & Semester", "GPA", "Course Shifting", "Status"].map(
-              (menuItem) => (
-                <TouchableOpacity
-                  key={menuItem}
-                  style={styles.menuItemRowButton}
-                >
-                  <Text style={styles.menuItemLabelText}>{menuItem}</Text>
-                  <Text style={styles.menuChevronArrowText}>❯</Text>
-                </TouchableOpacity>
-              ),
-            )}
-          </View>
-
-          {/* Close / Return Home trigger at the absolute bottom of the panel drawer */}
-          <TouchableOpacity
-            style={styles.sidebarFooterButton}
-            onPress={() => setSidebarOpen(false)}
+        <TouchableWithoutFeedback onPress={() => setNotificationsOpen(false)}>
+          <BlurView
+            intensity={75} // Sets how deep and frosted the look feels
+            tint="light" // Matches your clean white premium Figma spec
+            blurMethod="dimezisBlurView" // THE FIX: Uses the modern stable prop to bypass fallback transparent modes on Android!
+            style={styles.notificationOverlayContainer}
           >
-            <Text style={styles.sidebarFooterButtonText}>Home</Text>
-          </TouchableOpacity>
+            <Text style={styles.notificationHeadingTitle}>Notifications</Text>
+            <Text style={styles.noNotificationsSubtitleText}>
+              No new updates right now.
+            </Text>
+          </BlurView>
+        </TouchableWithoutFeedback>
+      )}
+
+      {/* OVERLAY 2: Right-Aligned Sliding Sidebar Panel with Click-Outside-To-Close Backdrop */}
+      {shouldRenderSidebar && (
+        <View style={styles.sidebarWrapperOverlay}>
+          {/* Captures clicks on the transparent dismiss barrier beside the right panel drawer */}
+          <TouchableWithoutFeedback onPress={closeSidebarAnimated}>
+            <View style={styles.sidebarDimDismissBackdrop} />
+          </TouchableWithoutFeedback>
+
+          {/* Sidebar Drawer Body Panel with fluid sliding animation wrapper */}
+          <Animated.View
+            style={[
+              styles.sidebarDrawerContainer,
+              { transform: [{ translateX: slideAnim }] },
+            ]}
+          >
+            {/* Top Header inside the sidebar - Extends completely to the upper limit to eliminate background bleeding */}
+            <View style={styles.sidebarHeaderBlock}>
+              <Image
+                source={require("../../assets/images/Gradewise logos/logomain.png")}
+                style={styles.sidebarBrandLogoAsset}
+                resizeMode="contain"
+              />
+            </View>
+
+            {/* Sidebar Navigation Shortcut Item Links */}
+            <View style={styles.sidebarLinksListWrapper}>
+              {["Course & Semester", "GPA", "Course Shifting", "Status"].map(
+                (menuItem) => (
+                  <TouchableOpacity
+                    key={menuItem}
+                    style={styles.menuItemRowButton}
+                  >
+                    <Text style={styles.menuItemLabelText}>{menuItem}</Text>
+                    <Text style={styles.menuChevronArrowText}>❯</Text>
+                  </TouchableOpacity>
+                ),
+              )}
+            </View>
+
+            {/* Secure Logout trigger lifted beautifully above the Android virtual navigation line */}
+            <TouchableOpacity
+              style={styles.sidebarFooterButton}
+              onPress={handleLogout}
+            >
+              <Text style={styles.sidebarFooterButtonText}>Sign Out</Text>
+            </TouchableOpacity>
+          </Animated.View>
         </View>
       )}
 
-      {/* 3. SOLID FIXED BOTTOM NAVIGATION BAR ROW PANEL CONTAINER */}
+      {/* 3. SOLID EXPANDED FIXED BOTTOM NAVIGATION BAR ROW PANEL CONTAINER */}
       <View style={styles.bottomTabBarRowContainer}>
         {/* Left Item: Home Action Shortcut Button Trigger */}
         <TouchableOpacity
           style={styles.tabButtonElement}
           onPress={() => {
             setNotificationsOpen(false);
-            setSidebarOpen(false);
+            closeSidebarAnimated();
           }}
         >
           <Image
@@ -116,8 +238,12 @@ export default function Dashboard() {
           />
         </TouchableOpacity>
 
-        {/* Center Item: Elevated Floating Shield G Symbol Mascot Circle Wrap */}
-        <View style={styles.centerCircularLogoFloatingPodWrapper}>
+        {/* Center Item: Elevated Tactile Stone Pebble Shield G Mascot Module Container */}
+        <TouchableOpacity
+          style={styles.centerCircularLogoFloatingPodWrapper}
+          onPress={handleCenterButtonPress}
+          activeOpacity={0.85}
+        >
           <View style={styles.innerShieldGraphicMascotCirclePodContainer}>
             <Image
               source={require("../../assets/images/Gradewise logos/G middle logo.png")}
@@ -125,7 +251,7 @@ export default function Dashboard() {
               resizeMode="contain"
             />
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Right Item: Notification Toggle Bell Layout Action Link Trigger */}
         <TouchableOpacity
@@ -142,16 +268,11 @@ export default function Dashboard() {
     </SafeAreaView>
   );
 }
-
-// === PASTE PART 2 IMMEDIATELY DOWN BENEATH THIS LINE ===
-
 const styles = StyleSheet.create({
   safeContainer: {
     flex: 1,
-    backgroundColor: "#FFFBF9", // The crisp base tone from your design board canvas
+    backgroundColor: "#FFFBF9",
   },
-
-  // BACKGROUND SYSTEM: Renders the custom diagonal slice layout effect
   backgroundCanvasContainer: {
     position: "absolute",
     top: 0,
@@ -159,7 +280,7 @@ const styles = StyleSheet.create({
     width: width,
     height: height,
     zIndex: 1,
-    backgroundColor: "#EFEBE9", // The light grey-beige tone from your blueprint slice
+    backgroundColor: "#EFEBE9",
   },
   diagonalSliceShape: {
     position: "absolute",
@@ -169,26 +290,24 @@ const styles = StyleSheet.create({
     height: 0,
     backgroundColor: "transparent",
     borderStyle: "solid",
-    // These vector parameters use screen dimensions to create a clean, uniform diagonal cut
     borderLeftWidth: width,
-    borderBottomWidth: height * 0.85,
+    borderBottomWidth: height * 1.06,
     borderLeftColor: "transparent",
-    borderBottomColor: "#FFFBF9", // Intersects the base background tone cleanly
+    borderBottomColor: "#FFFBF9",
   },
-
-  // CONTENT OVERLAYS
   mainLayoutContent: {
     flex: 1,
-    zIndex: 2, // Positions elements directly above your custom background canvas layer
+    zIndex: 2,
     paddingHorizontal: 24,
+    alignItems: "center",
   },
   topControlRow: {
     width: "100%",
     height: 60,
     flexDirection: "row",
-    justifyContent: "flex-end", // Aligns your custom hamburger button directly to the top right corner
+    justifyContent: "flex-end",
     alignItems: "center",
-    marginTop: Platform.OS === "android" ? 10 : 0,
+    marginTop: Platform.OS === "android" ? 15 : 0,
   },
   hamburgerTouchArea: {
     width: 40,
@@ -199,76 +318,99 @@ const styles = StyleSheet.create({
   hamburgerLine: {
     width: 26,
     height: 3,
-    backgroundColor: "#000000", // Dark line thickness matching your layout mockup lines
+    backgroundColor: "#000000",
     borderRadius: 2,
   },
   centerBrandDisplayBlock: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: height * 0.15, // Centers logo beautifully above the floating tab bar
+    marginBottom: height * 0.22, // Raised up slightly to allow optimal room for text stacks
   },
   centerMainLogoAsset: {
     width: width * 0.55,
     height: width * 0.55,
+    transform: [{ translateX: 9 }],
+  },
+  brandTitleBoldText: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "#000000", // Sharp black text color matching your figma blueprint line
+    letterSpacing: 2,
+    marginTop: 10,
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif", // Mirrors premium Libre Bodoni typography
+    textAlign: "center",
+  },
+  userGreetingText: {
+    marginTop: 16,
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#4A1516",
+    opacity: 0.75,
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    textTransform: "capitalize",
+    textAlign: "center",
   },
 
-  // SOLID FIXED BOTTOM NAVIGATION BAR TAB ROW SYSTEM
+  // FIXED BOTTOM NAVIGATION BAR ROW - INCREASED REAL ESTATE
   bottomTabBarRowContainer: {
     position: "absolute",
     bottom: 0,
     left: 0,
     width: width,
-    height: 75,
-    backgroundColor: "#4A1516", // Your beautiful dark maroon/crimson background code color
+    height: Platform.OS === "ios" ? 105 : 95, // Expanded height to provide premium layout breathing space
+    backgroundColor: "#4A1516",
     flexDirection: "row",
     justifyContent: "space-around",
     alignItems: "center",
-    zIndex: 10, // Locks navbar securely over all background views and notification windows
-    paddingBottom: Platform.OS === "ios" ? 15 : 0,
+    zIndex: 10,
+    paddingBottom: Platform.OS === "ios" ? 24 : 14,
+    borderTopLeftRadius: 12, // Subtle rounded upper lips matching figma layout cards
+    borderTopRightRadius: 12,
   },
   tabButtonElement: {
-    width: 60,
+    width: 70,
     height: "100%",
     justifyContent: "center",
     alignItems: "center",
   },
   footerIconTabAsset: {
-    width: 26,
-    height: 26,
+    width: 36, // Scaled up cleanly from 32px for dominant legibility lines
+    height: 36,
   },
+
+  // THE INTERACTIVE STONE PEBBLE PLATFORM POD CAPSULE
   centerCircularLogoFloatingPodWrapper: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: "#FFFBF9", // Matching cutout outer ring background wrapper
+    width: 92, // Scaled up beautifully to balance the expanded navbar height
+    height: 92,
+    borderRadius: 46,
+    backgroundColor: "#DDDDDD", // Crisp matte pebble gray framework backing container
     justifyContent: "center",
     alignItems: "center",
-    top: -24, // Floats the center shield asset beautifully elevated above the bar line like your design
+    top: -32, // Floats higher above the thick action row panel divider line
+    borderWidth: 3,
+    borderColor: "#4A1516", // Bold maroon intersection outline removing layered flat circle looks
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 5,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 8,
   },
   innerShieldGraphicMascotCirclePodContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "#4A1516", // Inner maroon profile backing container frame
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: "#DDDDDD", // Consistent pebble baseline color mapping texture lines
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#FFFBF9",
+    borderWidth: 1.5,
+    borderColor: "rgba(0, 0, 0, 0.08)", // Fine internal grain tracking shadow offset
   },
   footerCenterShieldIconAsset: {
-    width: 44,
-    height: 44,
+    width: 52, // Enriched asset proportions to completely dominate central focus points
+    height: 52,
   },
 
-  // === PASTE PART 3 IMMEDIATELY DOWN BENEATH THIS LINE ===
-
-  // OVERLAY SYSTEM 1: Full-Screen Notification Blurring View
   notificationOverlayContainer: {
     position: "absolute",
     top: 0,
@@ -279,22 +421,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
+    overflow: "hidden", // Crucial for clean canvas bounding rules on Android devices
   },
+
   blurCoverFilterBackdrop: {
     position: "absolute",
     top: 0,
     left: 0,
     width: width,
     height: height,
-    backgroundColor: "rgba(255, 251, 249, 0.88)", // Matches light mockup overlay
-    // On web, this creates a crisp native blur filter effect. On devices,
-    // it functions as a premium frosted panel overlay over your dashboard elements
-    backdropFilter: "blur(20px)",
+    backgroundColor: "rgba(255, 251, 249, 0.88)",
   },
   notificationHeadingTitle: {
     fontSize: 28,
     fontWeight: "bold",
-    color: "#4A1516", // Deep crimson heading font color
+    color: "#4A1516",
     marginBottom: 8,
     zIndex: 6,
   },
@@ -303,36 +444,50 @@ const styles = StyleSheet.create({
     color: "#757575",
     zIndex: 6,
   },
-
-  // OVERLAY SYSTEM 2: Sliding Sidebar Drawer Layout Panel Panel
-  sidebarDrawerContainer: {
+  sidebarWrapperOverlay: {
     position: "absolute",
     top: 0,
     left: 0,
-    width: width * 0.72, // Takes up exactly 72% of the screen width matching your blueprint scale
+    width: width,
     height: height,
-    backgroundColor: "#4A1516", // Beautiful solid maroon/crimson background fill color
-    zIndex: 15, // Rides safely over top controls and nav bars
-    paddingTop: Platform.OS === "ios" ? 50 : 30,
+    zIndex: 15,
+    flexDirection: "row",
+  },
+  sidebarDimDismissBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: width,
+    height: height,
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+  },
+  sidebarDrawerContainer: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: width * 0.72,
+    height: height,
+    backgroundColor: "#4A1516",
     shadowColor: "#000",
-    shadowOffset: { width: 4, height: 0 },
+    shadowOffset: { width: -4, height: 0 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 10,
   },
   sidebarHeaderBlock: {
     width: "100%",
-    height: 100,
+    height: 140,
     justifyContent: "center",
     alignItems: "center",
     borderBottomWidth: 1,
-    borderColor: "rgba(255, 251, 249, 0.15)", // Subtle separator border line line
-    backgroundColor: "#FFFFFF", // Matches top background cutout block in sidebar image blueprint
-    paddingVertical: 12,
+    borderColor: "rgba(255, 251, 249, 0.15)",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === "ios" ? 40 : 25,
   },
   sidebarBrandLogoAsset: {
-    width: "80%",
-    height: "80%",
+    width: "100%",
+    height: "100%",
   },
   sidebarLinksListWrapper: {
     flex: 1,
@@ -345,10 +500,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderColor: "rgba(255, 251, 249, 0.1)", // Clean internal link dividers
+    borderColor: "rgba(255, 251, 249, 0.1)",
   },
   menuItemLabelText: {
-    color: "#FFFBF9", // Pristine white text links matching your image mockup
+    color: "#FFFBF9",
     fontSize: 16,
     fontWeight: "500",
   },
@@ -358,11 +513,12 @@ const styles = StyleSheet.create({
   },
   sidebarFooterButton: {
     width: "100%",
-    paddingVertical: 24,
+    paddingVertical: 20,
     paddingHorizontal: 24,
     borderTopWidth: 1,
     borderColor: "rgba(255, 251, 249, 0.15)",
     justifyContent: "center",
+    marginBottom: Platform.OS === "android" ? 35 : 45,
   },
   sidebarFooterButtonText: {
     color: "#FFFBF9",
