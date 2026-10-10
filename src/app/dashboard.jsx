@@ -1,4 +1,4 @@
-import { BlurView } from "expo-blur";
+import { BlurTargetView, BlurView } from "expo-blur";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -18,17 +18,22 @@ import { Query } from "react-native-appwrite";
 import { account, databases } from "../../lib/appwrite";
 
 const { width, height } = Dimensions.get("window");
+const bottomTabBarHeight = Platform.OS === "ios" ? 105 : 95;
 
 export default function Dashboard() {
   const router = useRouter();
 
   // Layout presentation controls
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [shouldRenderSidebar, setShouldRenderSidebar] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [shouldRenderNotifications, setShouldRenderNotifications] =
+    useState(false);
 
-  // Animation value reference driving the sliding translation behavior
-  const slideAnim = useRef(new Animated.Value(width)).current;
+  // Animation references for the sidebar slide and both glass backdrops
+  const [slideAnim] = useState(() => new Animated.Value(width));
+  const [sidebarBackdropOpacity] = useState(() => new Animated.Value(0));
+  const [notificationOpacity] = useState(() => new Animated.Value(0));
+  const dashboardBlurTarget = useRef(null);
 
   // Appwrite platform authentication records
   const [userProfile, setUserProfile] = useState(null);
@@ -63,31 +68,78 @@ export default function Dashboard() {
 
   // Fire sliding fluid transitions smoothly every single turn
   const openSidebarAnimated = () => {
+    slideAnim.stopAnimation();
+    sidebarBackdropOpacity.stopAnimation();
+    slideAnim.setValue(width);
+    sidebarBackdropOpacity.setValue(0);
     setShouldRenderSidebar(true);
-    setSidebarOpen(true);
-    Animated.timing(slideAnim, {
-      toValue: 0, // Slides cleanly onto the screen layer
-      duration: 300,
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sidebarBackdropOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const closeSidebarAnimated = () => {
+    if (!shouldRenderSidebar) return;
+
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: width,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sidebarBackdropOpacity, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) setShouldRenderSidebar(false);
+    });
+  };
+
+  const openNotifications = () => {
+    notificationOpacity.stopAnimation();
+    notificationOpacity.setValue(0);
+    setShouldRenderNotifications(true);
+    setNotificationsOpen(true);
+    Animated.timing(notificationOpacity, {
+      toValue: 1,
+      duration: 220,
       useNativeDriver: true,
     }).start();
   };
 
-  const closeSidebarAnimated = () => {
-    setSidebarOpen(false);
-    Animated.timing(slideAnim, {
-      toValue: width, // Slides back out of the viewport bounds
-      duration: 250,
+  const closeNotifications = () => {
+    if (!shouldRenderNotifications) return;
+
+    setNotificationsOpen(false);
+    Animated.timing(notificationOpacity, {
+      toValue: 0,
+      duration: 220,
       useNativeDriver: true,
-    }).start(() => {
-      setShouldRenderSidebar(false); // Cleanly unmounts only AFTER animation completes tracking
+    }).start(({ finished }) => {
+      if (finished) setShouldRenderNotifications(false);
     });
+  };
+
+  const handleHomePress = () => {
+    closeNotifications();
+    closeSidebarAnimated();
   };
 
   // Securely clear sessions and bounce user back to sign in
   const handleLogout = async () => {
     try {
       await account.deleteSession("current");
-      setSidebarOpen(false);
       setShouldRenderSidebar(false);
       router.replace("/");
     } catch (error) {
@@ -117,6 +169,10 @@ export default function Dashboard() {
   };
   return (
     <SafeAreaView style={styles.safeContainer}>
+      <BlurTargetView
+        ref={dashboardBlurTarget}
+        style={styles.dashboardBlurTarget}
+      >
       {/* BACKGROUND AREA: The custom diagonal visual slice background layer */}
       <View style={styles.backgroundCanvasContainer}>
         <View style={styles.diagonalSliceShape} />
@@ -154,29 +210,98 @@ export default function Dashboard() {
         </View>
       </View>
 
-      {/* OVERLAY 1: Stable Cross-Platform Frosted Blur Shield */}
-      {notificationsOpen && (
-        <TouchableWithoutFeedback onPress={() => setNotificationsOpen(false)}>
-          <BlurView
-            intensity={75} // Sets how deep and frosted the look feels
-            tint="light" // Matches your clean white premium Figma spec
-            blurMethod="dimezisBlurView" // THE FIX: Uses the modern stable prop to bypass fallback transparent modes on Android!
-            style={styles.notificationOverlayContainer}
-          >
+      </BlurTargetView>
+
+      {/* Bottom navigation stays clear and outside the dashboard blur target. */}
+      <View style={styles.bottomTabBarRowContainer}>
+        <TouchableOpacity
+          style={styles.tabButtonElement}
+          onPress={handleHomePress}
+        >
+          <Image
+            source={require("../../assets/images/Gradewise logos/home.png")}
+            style={styles.footerIconTabAsset}
+            resizeMode="contain"
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.centerCircularLogoFloatingPodWrapper}
+          onPress={handleCenterButtonPress}
+          activeOpacity={0.85}
+        >
+          <View style={styles.innerShieldGraphicMascotCirclePodContainer}>
+            <Image
+              source={require("../../assets/images/Gradewise logos/G middle logo.png")}
+              style={styles.footerCenterShieldIconAsset}
+              resizeMode="contain"
+            />
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tabButtonElement}
+          onPress={() =>
+            notificationsOpen ? closeNotifications() : openNotifications()
+          }
+        >
+          <Image
+            source={require("../../assets/images/Gradewise logos/Gbell.icon.png")}
+            style={styles.footerIconTabAsset}
+            resizeMode="contain"
+          />
+        </TouchableOpacity>
+      </View>
+
+      {shouldRenderNotifications && (
+        <Animated.View
+          pointerEvents={notificationsOpen ? "auto" : "none"}
+          style={[
+            styles.notificationOverlayContainer,
+            { opacity: notificationOpacity },
+          ]}
+        >
+          <TouchableWithoutFeedback onPress={closeNotifications}>
+            <View style={styles.notificationDismissBackdrop}>
+              <BlurView
+                blurTarget={dashboardBlurTarget}
+                intensity={65}
+                tint="light"
+                blurMethod="dimezisBlurView"
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={styles.notificationTint} />
+            </View>
+          </TouchableWithoutFeedback>
+
+          <View style={styles.notificationText}>
             <Text style={styles.notificationHeadingTitle}>Notifications</Text>
             <Text style={styles.noNotificationsSubtitleText}>
               No new updates right now.
             </Text>
-          </BlurView>
-        </TouchableWithoutFeedback>
+          </View>
+        </Animated.View>
       )}
 
-      {/* OVERLAY 2: Right-Aligned Sliding Sidebar Panel with Click-Outside-To-Close Backdrop */}
+      {/* Right-Aligned Sliding Sidebar Panel with Click-Outside-To-Close Backdrop */}
       {shouldRenderSidebar && (
         <View style={styles.sidebarWrapperOverlay}>
-          {/* Captures clicks on the transparent dismiss barrier beside the right panel drawer */}
           <TouchableWithoutFeedback onPress={closeSidebarAnimated}>
-            <View style={styles.sidebarDimDismissBackdrop} />
+            <Animated.View
+              style={[
+                styles.sidebarDimDismissBackdrop,
+                { opacity: sidebarBackdropOpacity },
+              ]}
+            >
+              <BlurView
+                blurTarget={dashboardBlurTarget}
+                intensity={55}
+                tint="light"
+                blurMethod="dimezisBlurView"
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={styles.sidebarTint} />
+            </Animated.View>
           </TouchableWithoutFeedback>
 
           {/* Sidebar Drawer Body Panel with fluid sliding animation wrapper */}
@@ -221,15 +346,12 @@ export default function Dashboard() {
         </View>
       )}
 
-      {/* 3. SOLID EXPANDED FIXED BOTTOM NAVIGATION BAR ROW PANEL CONTAINER */}
-      <View style={styles.bottomTabBarRowContainer}>
-        {/* Left Item: Home Action Shortcut Button Trigger */}
+      {shouldRenderSidebar && (
         <TouchableOpacity
-          style={styles.tabButtonElement}
-          onPress={() => {
-            setNotificationsOpen(false);
-            closeSidebarAnimated();
-          }}
+          style={styles.sidebarHomeButton}
+          onPress={handleHomePress}
+          accessibilityRole="button"
+          accessibilityLabel="Home; close sidebar"
         >
           <Image
             source={require("../../assets/images/Gradewise logos/home.png")}
@@ -237,34 +359,7 @@ export default function Dashboard() {
             resizeMode="contain"
           />
         </TouchableOpacity>
-
-        {/* Center Item: Elevated Tactile Stone Pebble Shield G Mascot Module Container */}
-        <TouchableOpacity
-          style={styles.centerCircularLogoFloatingPodWrapper}
-          onPress={handleCenterButtonPress}
-          activeOpacity={0.85}
-        >
-          <View style={styles.innerShieldGraphicMascotCirclePodContainer}>
-            <Image
-              source={require("../../assets/images/Gradewise logos/G middle logo.png")}
-              style={styles.footerCenterShieldIconAsset}
-              resizeMode="contain"
-            />
-          </View>
-        </TouchableOpacity>
-
-        {/* Right Item: Notification Toggle Bell Layout Action Link Trigger */}
-        <TouchableOpacity
-          style={styles.tabButtonElement}
-          onPress={() => setNotificationsOpen(!notificationsOpen)}
-        >
-          <Image
-            source={require("../../assets/images/Gradewise logos/Gbell.icon.png")}
-            style={styles.footerIconTabAsset}
-            resizeMode="contain"
-          />
-        </TouchableOpacity>
-      </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -272,6 +367,9 @@ const styles = StyleSheet.create({
   safeContainer: {
     flex: 1,
     backgroundColor: "#FFFBF9",
+  },
+  dashboardBlurTarget: {
+    flex: 1,
   },
   backgroundCanvasContainer: {
     position: "absolute",
@@ -358,12 +456,13 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     width: width,
-    height: Platform.OS === "ios" ? 105 : 95, // Expanded height to provide premium layout breathing space
+    height: bottomTabBarHeight, // Expanded height to provide premium layout breathing space
     backgroundColor: "#4A1516",
     flexDirection: "row",
     justifyContent: "space-around",
     alignItems: "center",
-    zIndex: 10,
+    zIndex: 30,
+    elevation: 30,
     paddingBottom: Platform.OS === "ios" ? 24 : 14,
     borderTopLeftRadius: 12, // Subtle rounded upper lips matching figma layout cards
     borderTopRightRadius: 12,
@@ -415,22 +514,28 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 0,
     left: 0,
-    width: width,
-    height: height,
-    zIndex: 5,
+    right: 0,
+    bottom: bottomTabBarHeight,
+    zIndex: 20,
+    elevation: 20,
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
-    overflow: "hidden", // Crucial for clean canvas bounding rules on Android devices
   },
-
-  blurCoverFilterBackdrop: {
+  notificationDismissBackdrop: {
     position: "absolute",
     top: 0,
     left: 0,
-    width: width,
-    height: height,
-    backgroundColor: "rgba(255, 251, 249, 0.88)",
+    right: 0,
+    bottom: 0,
+  },
+  notificationTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255, 251, 249, 0.14)",
+  },
+  notificationText: {
+    alignItems: "center",
+    paddingHorizontal: 24,
   },
   notificationHeadingTitle: {
     fontSize: 28,
@@ -448,25 +553,41 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 0,
     left: 0,
-    width: width,
-    height: height,
-    zIndex: 15,
+    right: 0,
+    bottom: 0,
+    zIndex: 40,
+    elevation: 40,
     flexDirection: "row",
+  },
+  sidebarHomeButton: {
+    position: "absolute",
+    bottom: 0,
+    left: (width - 232) / 6,
+    width: 70,
+    height: bottomTabBarHeight,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingBottom: Platform.OS === "ios" ? 24 : 14,
+    zIndex: 50,
+    elevation: 50,
   },
   sidebarDimDismissBackdrop: {
     position: "absolute",
     top: 0,
     left: 0,
-    width: width,
-    height: height,
-    backgroundColor: "rgba(0, 0, 0, 0.3)",
+    right: 0,
+    bottom: bottomTabBarHeight,
+  },
+  sidebarTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255, 251, 249, 0.2)",
   },
   sidebarDrawerContainer: {
     position: "absolute",
     top: 0,
     right: 0,
     width: width * 0.72,
-    height: height,
+    bottom: 0,
     backgroundColor: "#4A1516",
     shadowColor: "#000",
     shadowOffset: { width: -4, height: 0 },
