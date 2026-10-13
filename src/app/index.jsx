@@ -15,7 +15,7 @@ import {
 } from "react-native";
 // Import our central, secure Appwrite cloud connection tools
 import { Query } from "react-native-appwrite";
-import { account, databases } from "../../lib/appwrite";
+import { account, config, databases } from "../../lib/appwrite";
 
 export default function SignIn() {
   const router = useRouter();
@@ -55,10 +55,10 @@ export default function SignIn() {
       const session = await account.createEmailPasswordSession(email, password);
       if (!session) throw new Error("Authentication handshake failed.");
 
-      // 3. Look up Profile Role: Scan our users_collection table row columns to verify user role
+      // 3. Look up the user profile to verify the role
       const userProfileResponse = await databases.listDocuments(
-        "gradtrack_db",
-        "users_collection",
+        config.databaseId,
+        config.usersCollectionId,
         [Query.equal("email", email.toLowerCase().trim())],
       );
 

@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 // Import our centralized Appwrite engine nodes cleanly
-import { account, databases, ID } from "../../lib/appwrite";
+import { account, config, databases, ID } from "../../lib/appwrite";
 
 export default function SignUp() {
   const router = useRouter();
@@ -52,10 +52,10 @@ export default function SignUp() {
 
       if (!newAccount) throw new Error("Account creation node mapping failed.");
 
-      // 3. Document mapping: Inject user profile variables into your users_collection database rows
+      // 3. Document mapping: Store user profile variables in the users collection
       await databases.createDocument(
-        "gradtrack_db", // Your Database ID string
-        "users_collection", // Your Table / Collection ID string
+        config.databaseId,
+        config.usersCollectionId,
         ID.unique(), // Unique text string ID for this specific document entry row
         {
           name: name,

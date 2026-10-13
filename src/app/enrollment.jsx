@@ -1,30 +1,127 @@
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import { Query } from "react-native-appwrite";
+import { account, config, databases } from "../../lib/appwrite";
 
 export default function Enrollment() {
   const router = useRouter();
   const [code, setCode] = useState("");
   const [agreed, setAgreed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [enrolledPortals, setEnrolledPortals] = useState([]);
+  const [studentEmail, setStudentEmail] = useState("");
 
-  const handleContinue = () => {
-    // Basic verification placeholder check
-    if (code.trim().length > 0) {
-      router.push("/dashboard");
-    } else {
-      alert(
-        "Please enter a valid enrollment code provided by your instructor.",
+  // Fetch student email and active enrolled portals on mount
+  useEffect(() => {
+    const fetchStudentData = async () => {
+      try {
+        const currentAccount = await account.get();
+        setStudentEmail(currentAccount.email);
+
+        const studentRecord = await databases.listDocuments(
+          config.databaseId,
+          config.usersCollectionId,
+          [Query.equal("email", currentAccount.email)],
+        );
+
+        if (studentRecord.documents.length > 0) {
+          const portals = studentRecord.documents[0].enrolledPortals || [];
+          setEnrolledPortals(portals);
+        }
+      } catch (error) {
+        console.log("Error fetching enrollment info:", error);
+      }
+    };
+
+    fetchStudentData();
+  }, []);
+
+  const handleContinue = async () => {
+    if (!code.trim()) {
+      Alert.alert("Error", "Please enter a valid portal code.");
+      return;
+    }
+    if (!agreed) {
+      Alert.alert(
+        "Terms Required",
+        "Please agree to the Terms of Service to proceed.",
       );
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // 1. Verify if the code exists in the classes collection
+      const classResponse = await databases.listDocuments(
+        config.databaseId,
+        config.classesCollectionId,
+        [Query.equal("portalCode", code.trim().toUpperCase())],
+      );
+
+      if (classResponse.documents.length === 0) {
+        Alert.alert(
+          "Invalid Code",
+          "No class found matching this portal code.",
+        );
+        setLoading(false);
+        return;
+      }
+
+      const matchedClass = classResponse.documents[0];
+
+      // 2. Find student document ID
+      const userResponse = await databases.listDocuments(
+        config.databaseId,
+        config.usersCollectionId,
+        [Query.equal("email", studentEmail)],
+      );
+
+      if (userResponse.documents.length > 0) {
+        const userDoc = userResponse.documents[0];
+        const currentPortals = userDoc.enrolledPortals || [];
+
+        if (currentPortals.includes(matchedClass.portalCode)) {
+          Alert.alert(
+            "Already Enrolled",
+            "You already have access to this portal.",
+          );
+          router.push("/dashboard");
+          return;
+        }
+
+        const updatedPortals = [...currentPortals, matchedClass.portalCode];
+        await databases.updateDocument(
+          config.databaseId,
+          config.usersCollectionId,
+          userDoc.$id,
+          { enrolledPortals: updatedPortals },
+        );
+
+        setEnrolledPortals(updatedPortals);
+        setCode("");
+        Alert.alert(
+          "Success!",
+          `Successfully joined ${matchedClass.className}`,
+        );
+        router.push("/dashboard");
+      }
+    } catch (error) {
+      console.log("Enrollment error:", error);
+      Alert.alert("Error", "Failed to process enrollment code.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -37,10 +134,8 @@ export default function Enrollment() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* 1. Header Display Text */}
         <Text style={styles.headerText}>WELCOME TO GRADTRACK</Text>
 
-        {/* 2. Main Illustration Banner Graphic */}
         <View style={styles.imageContainer}>
           <Image
             source={require("../../assets/images/Gradewise logos/logomain.png")}
@@ -49,7 +144,6 @@ export default function Enrollment() {
           />
         </View>
 
-        {/* 3. Central Verification Box Card */}
         <View style={styles.card}>
           <Text style={styles.cardHeading}>ENTER YOUR ENROLLMENT CODE:</Text>
 
@@ -62,7 +156,6 @@ export default function Enrollment() {
             autoCapitalize="characters"
           />
 
-          {/* Terms Agreement Checkbox Element */}
           <TouchableOpacity
             style={styles.checkboxRow}
             onPress={() => setAgreed(!agreed)}
@@ -74,10 +167,33 @@ export default function Enrollment() {
             </Text>
           </TouchableOpacity>
 
-          {/* Action Trigger Button */}
-          <TouchableOpacity style={styles.button} onPress={handleContinue}>
-            <Text style={styles.buttonText}>CONTINUE</Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={handleContinue}
+            disabled={loading}
+          >
+            <Text style={styles.buttonText}>
+              {loading ? "VERIFYING..." : "CONTINUE"}
+            </Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Portals You Have Access To Section */}
+        <View style={styles.portalsListContainer}>
+          <Text style={styles.portalsListHeading}>
+            PORTALS YOU HAVE ACCESS TO:
+          </Text>
+          {enrolledPortals.length === 0 ? (
+            <Text style={styles.noPortalsText}>No portals joined yet.</Text>
+          ) : (
+            enrolledPortals.map((portalCode, index) => (
+              <View key={index} style={styles.portalBadge}>
+                <Text style={styles.portalBadgeText}>
+                  🟢 Portal Code: {portalCode}
+                </Text>
+              </View>
+            ))
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -87,7 +203,7 @@ export default function Enrollment() {
 const styles = StyleSheet.create({
   keyboardContainer: {
     flex: 1,
-    backgroundColor: "#FFFBF9", // Bright canvas backdrop from your center design mockup
+    backgroundColor: "#FFFBF9",
   },
   scrollContent: {
     flexGrow: 1,
@@ -98,18 +214,18 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 22,
     fontWeight: "bold",
-    color: "#4A1516", // Deep crimson letter tone
+    color: "#4A1516",
     letterSpacing: 1.5,
-    marginBottom: 30,
+    marginBottom: 20,
     textAlign: "center",
   },
   imageContainer: {
-    marginBottom: 35,
+    marginBottom: 25,
     alignItems: "center",
   },
   mainLogo: {
-    width: 200,
-    height: 200,
+    width: 150,
+    height: 150,
   },
   card: {
     width: "100%",
@@ -149,7 +265,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     width: "100%",
-    marginBottom: 24,
+    marginBottom: 20,
     paddingHorizontal: 4,
   },
   checkbox: {
@@ -171,7 +287,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   linkText: {
-    color: "#3F51B5", // Classical hyperlink blue from blueprint specs
+    color: "#3F51B5",
     fontWeight: "bold",
     textDecorationLine: "underline",
   },
@@ -182,13 +298,43 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderTopWidth: 1,
     borderColor: "#E0D7D5",
-    marginTop: 8,
+    marginTop: 4,
     paddingTop: 12,
   },
   buttonText: {
     fontSize: 13,
     fontWeight: "bold",
-    color: "#757575",
+    color: "#4A1516",
     letterSpacing: 1,
+  },
+  portalsListContainer: {
+    width: "100%",
+    marginTop: 24,
+    paddingHorizontal: 4,
+  },
+  portalsListHeading: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#4A1516",
+    marginBottom: 10,
+    letterSpacing: 0.5,
+  },
+  noPortalsText: {
+    fontSize: 12,
+    color: "#757575",
+    fontStyle: "italic",
+  },
+  portalBadge: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D7CCC8",
+    padding: 12,
+    borderRadius: 6,
+    marginBottom: 8,
+  },
+  portalBadgeText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#4A1516",
   },
 });

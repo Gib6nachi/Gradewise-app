@@ -15,7 +15,7 @@ import {
   View,
 } from "react-native";
 import { Query } from "react-native-appwrite";
-import { account, databases } from "../../lib/appwrite";
+import { account, config, databases, ID } from "../../lib/appwrite";
 
 const { width, height } = Dimensions.get("window");
 const bottomTabBarHeight = Platform.OS === "ios" ? 105 : 95;
@@ -44,8 +44,8 @@ export default function Dashboard() {
       try {
         const currentAccount = await account.get();
         const response = await databases.listDocuments(
-          "gradtrack_db",
-          "users_collection",
+          config.databaseId,
+          config.usersCollectionId,
           [Query.equal("email", currentAccount.email)],
         );
 
@@ -65,6 +65,45 @@ export default function Dashboard() {
 
     fetchUserData();
   }, []);
+
+  const handleTeacherPortalManagement = async () => {
+    try {
+      const response = await databases.listDocuments(
+        config.databaseId,
+        config.classesCollectionId,
+        [Query.equal("teacherEmail", userProfile.email)],
+      );
+
+      if (response.documents.length > 0) {
+        const code = response.documents[0].portalCode;
+        Alert.alert(
+          "Your Portal Code",
+          `Students can use this code to join your portal:\n\n${code}`,
+        );
+      } else {
+        const generatedCode =
+          "GW-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+        await databases.createDocument(
+          config.databaseId,
+          config.classesCollectionId,
+          ID.unique(),
+          {
+            className: `${userProfile.name}'s Class`,
+            portalCode: generatedCode,
+            teacherEmail: userProfile.email,
+            teacherName: userProfile.name,
+          },
+        );
+        Alert.alert(
+          "Portal Code Created!",
+          `Your new portal code is:\n\n${generatedCode}`,
+        );
+      }
+    } catch (error) {
+      console.log("Error managing portal code:", error);
+      Alert.alert("Error", "Could not retrieve or create portal code.");
+    }
+  };
 
   // Fire sliding fluid transitions smoothly every single turn
   const openSidebarAnimated = () => {
@@ -173,43 +212,42 @@ export default function Dashboard() {
         ref={dashboardBlurTarget}
         style={styles.dashboardBlurTarget}
       >
-      {/* BACKGROUND AREA: The custom diagonal visual slice background layer */}
-      <View style={styles.backgroundCanvasContainer}>
-        <View style={styles.diagonalSliceShape} />
-      </View>
-
-      {/* MAIN SCREEN INTERFACE CONTENT */}
-      <View style={styles.mainLayoutContent}>
-        {/* Top Header Controls: Top Right Hamburger Button Trigger */}
-        <View style={styles.topControlRow}>
-          <TouchableOpacity
-            style={styles.hamburgerTouchArea}
-            onPress={openSidebarAnimated}
-          >
-            <View style={styles.hamburgerLine} />
-            <View style={[styles.hamburgerLine, { marginVertical: 5 }]} />
-            <View style={styles.hamburgerLine} />
-          </TouchableOpacity>
+        {/* BACKGROUND AREA: The custom diagonal visual slice background layer */}
+        <View style={styles.backgroundCanvasContainer}>
+          <View style={styles.diagonalSliceShape} />
         </View>
 
-        {/* Central Graphic Brand Section Container */}
-        <View style={styles.centerBrandDisplayBlock}>
-          <Image
-            source={require("../../assets/images/Gradewise logos/logomain.png")}
-            style={styles.centerMainLogoAsset}
-            resizeMode="contain"
-          />
-          {/* Bold Brand Title Matching Figma Specification Typography */}
-          <Text style={styles.brandTitleBoldText}>GRADTRACK</Text>
+        {/* MAIN SCREEN INTERFACE CONTENT */}
+        <View style={styles.mainLayoutContent}>
+          {/* Top Header Controls: Top Right Hamburger Button Trigger */}
+          <View style={styles.topControlRow}>
+            <TouchableOpacity
+              style={styles.hamburgerTouchArea}
+              onPress={openSidebarAnimated}
+            >
+              <View style={styles.hamburgerLine} />
+              <View style={[styles.hamburgerLine, { marginVertical: 5 }]} />
+              <View style={styles.hamburgerLine} />
+            </TouchableOpacity>
+          </View>
 
-          {userProfile && (
-            <Text style={styles.userGreetingText}>
-              Welcome, {userProfile.name} ({userProfile.role})
-            </Text>
-          )}
+          {/* Central Graphic Brand Section Container */}
+          <View style={styles.centerBrandDisplayBlock}>
+            <Image
+              source={require("../../assets/images/Gradewise logos/logomain.png")}
+              style={styles.centerMainLogoAsset}
+              resizeMode="contain"
+            />
+            {/* Bold Brand Title Matching Figma Specification Typography */}
+            <Text style={styles.brandTitleBoldText}>GRADTRACK</Text>
+
+            {userProfile && (
+              <Text style={styles.userGreetingText}>
+                Welcome, {userProfile.name} ({userProfile.role})
+              </Text>
+            )}
+          </View>
         </View>
-      </View>
-
       </BlurTargetView>
 
       {/* Bottom navigation stays clear and outside the dashboard blur target. */}
@@ -322,16 +360,37 @@ export default function Dashboard() {
 
             {/* Sidebar Navigation Shortcut Item Links */}
             <View style={styles.sidebarLinksListWrapper}>
-              {["Course & Semester", "GPA", "Course Shifting", "Status"].map(
-                (menuItem) => (
+              {userProfile?.role === "teacher" ? (
+                <>
                   <TouchableOpacity
-                    key={menuItem}
                     style={styles.menuItemRowButton}
+                    onPress={() => {
+                      closeSidebarAnimated();
+                      handleTeacherPortalManagement();
+                    }}
                   >
-                    <Text style={styles.menuItemLabelText}>{menuItem}</Text>
+                    <Text style={styles.menuItemLabelText}>
+                      Teacher Portal Code
+                    </Text>
                     <Text style={styles.menuChevronArrowText}>❯</Text>
                   </TouchableOpacity>
-                ),
+                  <TouchableOpacity style={styles.menuItemRowButton}>
+                    <Text style={styles.menuItemLabelText}>Class Roster</Text>
+                    <Text style={styles.menuChevronArrowText}>❯</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                ["Course & Semester", "GPA", "Course Shifting", "Status"].map(
+                  (menuItem) => (
+                    <TouchableOpacity
+                      key={menuItem}
+                      style={styles.menuItemRowButton}
+                    >
+                      <Text style={styles.menuItemLabelText}>{menuItem}</Text>
+                      <Text style={styles.menuChevronArrowText}>❯</Text>
+                    </TouchableOpacity>
+                  ),
+                )
               )}
             </View>
 
