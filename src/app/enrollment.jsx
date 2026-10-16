@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 import { Query } from "react-native-appwrite";
-import { account, config, databases } from "../../lib/appwrite";
+import { account, config, databases, ID } from "../../lib/appwrite";
 
 export default function Enrollment() {
   const router = useRouter();
@@ -81,42 +81,65 @@ export default function Enrollment() {
 
       const matchedClass = classResponse.documents[0];
 
-      // 2. Find student document ID
+      // 2. Find the student profile and check for an existing request
       const userResponse = await databases.listDocuments(
         config.databaseId,
         config.usersCollectionId,
         [Query.equal("email", studentEmail)],
       );
 
-      if (userResponse.documents.length > 0) {
-        const userDoc = userResponse.documents[0];
-        const currentPortals = userDoc.enrolledPortals || [];
+      if (userResponse.documents.length === 0) {
+        Alert.alert("Error", "Could not find your student profile.");
+        return;
+      }
 
-        if (currentPortals.includes(matchedClass.portalCode)) {
-          Alert.alert(
-            "Already Enrolled",
-            "You already have access to this portal.",
-          );
-          router.push("/dashboard");
-          return;
-        }
+      const userDoc = userResponse.documents[0];
+      const currentPortals = userDoc.enrolledPortals || [];
 
-        const updatedPortals = [...currentPortals, matchedClass.portalCode];
-        await databases.updateDocument(
-          config.databaseId,
-          config.usersCollectionId,
-          userDoc.$id,
-          { enrolledPortals: updatedPortals },
-        );
-
-        setEnrolledPortals(updatedPortals);
-        setCode("");
+      if (currentPortals.includes(matchedClass.portalCode)) {
         Alert.alert(
-          "Success!",
-          `Successfully joined ${matchedClass.className}`,
+          "Already Enrolled",
+          "You already have access to this portal.",
         );
         router.push("/dashboard");
+        return;
       }
+
+      const existingRequest = await databases.listDocuments(
+        config.databaseId,
+        config.approvalsCollectionId,
+        [
+          Query.equal("studentEmail", studentEmail),
+          Query.equal("portalCode", matchedClass.portalCode),
+        ],
+      );
+
+      if (existingRequest.documents.length > 0) {
+        Alert.alert(
+          "Request already exists",
+          "A request for this portal has already been submitted.",
+        );
+        return;
+      }
+
+      await databases.createDocument(
+        config.databaseId,
+        config.approvalsCollectionId,
+        ID.unique(),
+        {
+          studentName: userDoc.name,
+          studentEmail,
+          portalCode: matchedClass.portalCode,
+          teacherEmail: matchedClass.teacherEmail,
+          status: "pending",
+        },
+      );
+
+      setCode("");
+      Alert.alert(
+        "Request submitted!",
+        "Waiting for teacher approval.",
+      );
     } catch (error) {
       console.log("Enrollment error:", error);
       Alert.alert("Error", "Failed to process enrollment code.");

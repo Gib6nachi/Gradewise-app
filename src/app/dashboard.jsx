@@ -1,6 +1,6 @@
 import { BlurTargetView, BlurView } from "expo-blur";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -8,6 +8,7 @@ import {
   Image,
   Platform,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -28,6 +29,9 @@ export default function Dashboard() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [shouldRenderNotifications, setShouldRenderNotifications] =
     useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [expandedApprovalId, setExpandedApprovalId] = useState(null);
+  const [updatingApprovalId, setUpdatingApprovalId] = useState(null);
 
   // Animation references for the sidebar slide and both glass backdrops
   const [slideAnim] = useState(() => new Animated.Value(width));
@@ -37,7 +41,32 @@ export default function Dashboard() {
 
   // Appwrite platform authentication records
   const [userProfile, setUserProfile] = useState(null);
-  const [loadingProfile, setLoadingProfile] = useState(true);
+
+  const fetchPendingApprovals = useCallback(
+    async (teacherProfile) => {
+      if (teacherProfile?.role !== "teacher") return;
+
+      try {
+        const response = await databases.listDocuments(
+          config.databaseId,
+          config.approvalsCollectionId,
+          [
+            Query.equal("teacherEmail", teacherProfile.email),
+            Query.equal("status", "pending"),
+          ],
+        );
+        setPendingApprovals(response.documents);
+      } catch (error) {
+        console.log("Error fetching pending portal approvals:", error);
+        Alert.alert(
+          "Notifications Error",
+          "Could not load pending portal requests.",
+        );
+      }
+    },
+    [],
+  );
+
   // Synchronize layout sessions on container mount lines
   useEffect(() => {
     const fetchUserData = async () => {
@@ -49,22 +78,72 @@ export default function Dashboard() {
           [Query.equal("email", currentAccount.email)],
         );
 
-        if (response.documents.length > 0) {
-          setUserProfile(response.documents[0]); // Targets the exact active record object directly
-        } else {
-          setUserProfile({ name: currentAccount.name, role: "student" });
+        const profile =
+          response.documents.length > 0
+            ? response.documents[0]
+            : { name: currentAccount.name, role: "student" };
+        setUserProfile(profile);
+
+        if (profile.role === "teacher") {
+          await fetchPendingApprovals(profile);
         }
       } catch (error) {
         console.log("❌ Error fetching user dashboard profile:", error);
         Alert.alert("Session Error", "Could not load user profile details.");
         router.replace("/");
-      } finally {
-        setLoadingProfile(false);
       }
     };
 
     fetchUserData();
-  }, []);
+  }, [fetchPendingApprovals, router]);
+
+  const handleApprovalDecision = async (approval, status) => {
+    setUpdatingApprovalId(approval.$id);
+    try {
+      if (status === "approved") {
+        const userResponse = await databases.listDocuments(
+          config.databaseId,
+          config.usersCollectionId,
+          [Query.equal("email", approval.studentEmail)],
+        );
+
+        if (userResponse.documents.length === 0) {
+          throw new Error("Could not find the student's profile.");
+        }
+
+        const student = userResponse.documents[0];
+        const enrolledPortals = student.enrolledPortals || [];
+        if (!enrolledPortals.includes(approval.portalCode)) {
+          await databases.updateDocument(
+            config.databaseId,
+            config.usersCollectionId,
+            student.$id,
+            { enrolledPortals: [...enrolledPortals, approval.portalCode] },
+          );
+        }
+      }
+
+      await databases.updateDocument(
+        config.databaseId,
+        config.approvalsCollectionId,
+        approval.$id,
+        { status },
+      );
+
+      setPendingApprovals((currentApprovals) =>
+        currentApprovals.filter((item) => item.$id !== approval.$id),
+      );
+      setExpandedApprovalId(null);
+    } catch (error) {
+      console.log(`Error ${status} portal approval:`, error);
+      Alert.alert(
+        "Request Update Failed",
+        error.message || "Could not update this portal request.",
+      );
+    } finally {
+      setUpdatingApprovalId(null);
+    }
+  };
 
   const handleTeacherPortalManagement = async () => {
     try {
@@ -279,15 +358,25 @@ export default function Dashboard() {
 
         <TouchableOpacity
           style={styles.tabButtonElement}
-          onPress={() =>
-            notificationsOpen ? closeNotifications() : openNotifications()
-          }
+          onPress={() => {
+            if (notificationsOpen) {
+              closeNotifications();
+              return;
+            }
+            openNotifications();
+            if (userProfile?.role === "teacher") {
+              fetchPendingApprovals(userProfile);
+            }
+          }}
         >
           <Image
             source={require("../../assets/images/Gradewise logos/Gbell.icon.png")}
             style={styles.footerIconTabAsset}
             resizeMode="contain"
           />
+          {userProfile?.role === "teacher" && pendingApprovals.length > 0 && (
+            <View style={styles.notificationBadgeDot} />
+          )}
         </TouchableOpacity>
       </View>
 
@@ -312,11 +401,109 @@ export default function Dashboard() {
             </View>
           </TouchableWithoutFeedback>
 
-          <View style={styles.notificationText}>
+          <View style={styles.notificationPanel}>
             <Text style={styles.notificationHeadingTitle}>Notifications</Text>
-            <Text style={styles.noNotificationsSubtitleText}>
-              No new updates right now.
-            </Text>
+            {userProfile?.role === "teacher" ? (
+              pendingApprovals.length === 0 ? (
+                <Text style={styles.noNotificationsSubtitleText}>
+                  No pending portal requests.
+                </Text>
+              ) : (
+                <ScrollView
+                  style={styles.approvalList}
+                  contentContainerStyle={styles.approvalListContent}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {pendingApprovals.map((approval) => {
+                    const isExpanded = expandedApprovalId === approval.$id;
+                    const isUpdating = updatingApprovalId === approval.$id;
+                    return (
+                      <View key={approval.$id} style={styles.approvalCard}>
+                        <View style={styles.approvalSummary}>
+                          <View style={styles.approvalStudentInfo}>
+                            <Text style={styles.approvalStudentName}>
+                              {approval.studentName || "Student"}
+                            </Text>
+                            <Text style={styles.approvalPortalCode}>
+                              Portal: {approval.portalCode}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            style={styles.expandApprovalButton}
+                            onPress={() =>
+                              setExpandedApprovalId(
+                                isExpanded ? null : approval.$id,
+                              )
+                            }
+                            accessibilityRole="button"
+                            accessibilityLabel={
+                              isExpanded
+                                ? "Hide request details"
+                                : "Show request details"
+                            }
+                          >
+                            <Text style={styles.expandApprovalButtonText}>
+                              {isExpanded ? "Less" : "More"}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        {isExpanded && (
+                          <View style={styles.approvalDetails}>
+                            <Text style={styles.approvalDetailText}>
+                              Student email: {approval.studentEmail}
+                            </Text>
+                            <Text style={styles.approvalDetailText}>
+                              Request status: {approval.status}
+                            </Text>
+                          </View>
+                        )}
+
+                        <View style={styles.approvalActions}>
+                          <TouchableOpacity
+                            style={[
+                              styles.approvalActionButton,
+                              styles.rejectApprovalButton,
+                            ]}
+                            onPress={() =>
+                              handleApprovalDecision(approval, "rejected")
+                            }
+                            disabled={updatingApprovalId !== null}
+                            accessibilityRole="button"
+                            accessibilityLabel="Reject portal request"
+                          >
+                            <Text style={styles.approvalActionText}>X</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[
+                              styles.approvalActionButton,
+                              styles.approveApprovalButton,
+                            ]}
+                            onPress={() =>
+                              handleApprovalDecision(approval, "approved")
+                            }
+                            disabled={updatingApprovalId !== null}
+                            accessibilityRole="button"
+                            accessibilityLabel="Approve portal request"
+                          >
+                            <Text style={styles.approvalActionText}>✓</Text>
+                          </TouchableOpacity>
+                        </View>
+                        {isUpdating && (
+                          <Text style={styles.approvalUpdatingText}>
+                            Updating request...
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              )
+            ) : (
+              <Text style={styles.noNotificationsSubtitleText}>
+                No new updates right now.
+              </Text>
+            )}
           </View>
         </Animated.View>
       )}
@@ -536,6 +723,17 @@ const styles = StyleSheet.create({
     width: 36, // Scaled up cleanly from 32px for dominant legibility lines
     height: 36,
   },
+  notificationBadgeDot: {
+    position: "absolute",
+    top: 22,
+    right: 18,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#E53935",
+    borderWidth: 1.5,
+    borderColor: "#FFFBF9",
+  },
 
   // THE INTERACTIVE STONE PEBBLE PLATFORM POD CAPSULE
   centerCircularLogoFloatingPodWrapper: {
@@ -592,21 +790,113 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(255, 251, 249, 0.14)",
   },
-  notificationText: {
-    alignItems: "center",
-    paddingHorizontal: 24,
+  notificationPanel: {
+    width: "100%",
+    maxHeight: "85%",
+    backgroundColor: "#FFFBF9",
+    borderRadius: 14,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 8,
   },
   notificationHeadingTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: "bold",
     color: "#4A1516",
-    marginBottom: 8,
-    zIndex: 6,
+    marginBottom: 14,
+    textAlign: "center",
   },
   noNotificationsSubtitleText: {
     fontSize: 14,
     color: "#757575",
-    zIndex: 6,
+    textAlign: "center",
+    paddingVertical: 12,
+  },
+  approvalList: {
+    width: "100%",
+  },
+  approvalListContent: {
+    paddingBottom: 2,
+  },
+  approvalCard: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E0D7D5",
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
+  },
+  approvalSummary: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  approvalStudentInfo: {
+    flex: 1,
+    marginRight: 10,
+  },
+  approvalStudentName: {
+    color: "#4A1516",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  approvalPortalCode: {
+    color: "#757575",
+    fontSize: 13,
+    marginTop: 4,
+  },
+  expandApprovalButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  expandApprovalButtonText: {
+    color: "#6D2829",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  approvalDetails: {
+    borderTopWidth: 1,
+    borderTopColor: "#F0E9E7",
+    marginTop: 10,
+    paddingTop: 10,
+  },
+  approvalDetailText: {
+    color: "#5F5552",
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  approvalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 10,
+  },
+  approvalActionButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 10,
+  },
+  rejectApprovalButton: {
+    backgroundColor: "#B3261E",
+  },
+  approveApprovalButton: {
+    backgroundColor: "#2E7D32",
+  },
+  approvalActionText: {
+    color: "#FFFFFF",
+    fontSize: 19,
+    fontWeight: "bold",
+  },
+  approvalUpdatingText: {
+    color: "#757575",
+    fontSize: 11,
+    marginTop: 6,
+    textAlign: "right",
   },
   sidebarWrapperOverlay: {
     position: "absolute",
