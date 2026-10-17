@@ -547,38 +547,16 @@ export default function Dashboard() {
 
             {/* Sidebar Navigation Shortcut Item Links */}
             <View style={styles.sidebarLinksListWrapper}>
-              {userProfile?.role === "teacher" ? (
-                <>
-                  <TouchableOpacity
-                    style={styles.menuItemRowButton}
-                    onPress={() => {
-                      closeSidebarAnimated();
-                      handleTeacherPortalManagement();
-                    }}
-                  >
-                    <Text style={styles.menuItemLabelText}>
-                      Teacher Portal Code
-                    </Text>
-                    <Text style={styles.menuChevronArrowText}>❯</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.menuItemRowButton}>
-                    <Text style={styles.menuItemLabelText}>Class Roster</Text>
-                    <Text style={styles.menuChevronArrowText}>❯</Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                ["Course & Semester", "GPA", "Course Shifting", "Status"].map(
-                  (menuItem) => (
-                    <TouchableOpacity
-                      key={menuItem}
-                      style={styles.menuItemRowButton}
-                    >
-                      <Text style={styles.menuItemLabelText}>{menuItem}</Text>
-                      <Text style={styles.menuChevronArrowText}>❯</Text>
-                    </TouchableOpacity>
-                  ),
-                )
-              )}
+              <TouchableOpacity
+                style={styles.menuItemRowButton}
+                onPress={() => {
+                  closeSidebarAnimated();
+                  router.push("/portals-menu");
+                }}
+              >
+                <Text style={styles.menuItemLabelText}>Course Tracking</Text>
+                <Text style={styles.menuChevronArrowText}>❯</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Secure Logout trigger lifted beautifully above the Android virtual navigation line */}
